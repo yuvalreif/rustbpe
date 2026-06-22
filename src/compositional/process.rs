@@ -101,7 +101,9 @@ impl CompositionalTokenizer {
                 if meta.token_text == " " {
                     if !pending_groups.is_empty() {
                         pending_token_records.push((idx, token_id));
-                    } else if self.token_can_host_expr_space(raw_ids, idx + 1) {
+                    } else if !pending_leading_space
+                        && self.token_can_host_expr_space(raw_ids, idx + 1)
+                    {
                         pending_leading_space = true;
                     } else {
                         emit_literal(self, idx, token_id, false, &mut out_ids, &mut out_mods);

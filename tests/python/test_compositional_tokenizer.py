@@ -93,3 +93,12 @@ def test_compositional_tokenizer_modifier_byte_lengths_match_decode():
     assert decoded[0] == " dog"
     assert decoded[5] == "dog."
     assert byte_lengths[5] == 4
+
+
+def test_compositional_tokenizer_preserves_indentation_spaces():
+    tokenizer = rustbpe.CompositionalTokenizer(json.dumps(_config()))
+    text = "class example:\n    def method(self):\n        return 1"
+
+    token_ids, modifier_rows = tokenizer.process_text(text)
+
+    assert tokenizer.decode_with_modifiers(token_ids, modifier_rows) == text
