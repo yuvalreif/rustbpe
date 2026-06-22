@@ -134,7 +134,7 @@ def test_compositional_tokenizer_preserves_multi_space_modifier_boundaries():
         "the project",
         "the  project",
         "at  The project",
-        "rth West Brown Hare Projects website at  The project also has a Facebook page",
+        "rth west brown hare projects website at  The project also has a facebook page",
     ]
 
     for text in texts:
