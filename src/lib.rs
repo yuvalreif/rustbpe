@@ -9,6 +9,8 @@ use ahash::{AHashMap, AHashSet};
 use compact_str::CompactString;
 use rayon::prelude::*;
 
+mod compositional;
+
 // Default GPT-4 style regex pattern for splitting text
 const GPT4_PATTERN: &str = r"'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]++[\r\n]*|\s*[\r\n]|\s+(?!\S)|\s+";
 
@@ -575,6 +577,7 @@ impl Tokenizer {
 fn rustbpe(m: &Bound<'_, PyModule>) -> PyResult<()> {
     pyo3_log::init(); // forwards Rust `log` to Python's `logging`
     m.add_class::<Tokenizer>()?;
+    m.add_class::<compositional::CompositionalTokenizer>()?;
     Ok(())
 }
 

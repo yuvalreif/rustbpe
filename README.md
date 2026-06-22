@@ -61,6 +61,21 @@ print(tokenizer.vocab_size)  # 4096
 all_ids = tokenizer.batch_encode(["text one", "text two", "text three"])
 ```
 
+### Compositional tokenization
+
+`CompositionalTokenizer` is a complete tokenizer runtime. It owns the base BPE
+vocabulary supplied in its JSON configuration and applies CoBPE modifier metadata
+during encoding and decoding; it does not wrap a live `Tokenizer` instance.
+
+```python
+import json
+import rustbpe
+
+cobpe = rustbpe.CompositionalTokenizer(json.dumps(config))
+token_ids, modifier_rows = cobpe.process_text("on the dog.")
+text = cobpe.decode_with_modifiers(token_ids, modifier_rows)
+```
+
 ### Export to tiktoken
 
 The main use case: train with rustbpe, inference with tiktoken.
@@ -112,6 +127,17 @@ tokenizer.train_from_iterator(
 | `vocab_size` | Property: vocabulary size (256 + number of merges) |
 | `get_pattern()` | Get the regex pattern used for pre-tokenization |
 | `get_mergeable_ranks()` | Get token bytes and ranks for tiktoken export |
+
+### `CompositionalTokenizer`
+
+| Method | Description |
+|--------|-------------|
+| `CompositionalTokenizer(config_json)` | Load a CoBPE tokenizer from base BPE ranks and modifier metadata |
+| `process_text(text)` | Encode text into token IDs and modifier rows |
+| `process_text_batch(texts)` | Encode multiple texts in parallel |
+| `process_ids(ids)` | Apply compositional entries to existing base token IDs |
+| `decode_with_modifiers(ids, modifier_rows)` | Reconstruct text from IDs and modifiers |
+| `utf8_len_with_modifiers_batch(ids, modifier_rows)` | Compute decoded UTF-8 byte lengths |
 
 ## Development
 
