@@ -170,25 +170,24 @@ impl CompositionalTokenizer {
             return false;
         }
         let span_end = usize::min(start_idx + consumed_len, raw_ids.len());
-        let left_ok = if start_idx == 0 {
-            true
-        } else {
-            self.token_meta_ref(raw_ids[start_idx]).has_space_prefix
-                || self
-                    .token_meta_ref(raw_ids[start_idx - 1])
-                    .is_whitespace_only
-        };
-        if !left_ok && !pending_has_prefix_punct {
+        let Some(left_spaces) = self.left_boundary_space_count(raw_ids, start_idx) else {
             return false;
-        }
-        let mut j = span_end;
-        let mut saw_whitespace_between = false;
-        while j < raw_ids.len() && self.token_meta_ref(raw_ids[j]).is_whitespace_only {
-            if !self.token_meta_ref(raw_ids[j]).is_single_ascii_space {
+        };
+        let left_ok = if start_idx == 0 {
+            left_spaces == 0
+        } else {
+            left_spaces == 1
+        };
+        if !left_ok {
+            if left_spaces > 1 || !pending_has_prefix_punct {
                 return false;
             }
-            saw_whitespace_between = true;
-            j += 1;
+        }
+        let Some((right_spaces, j)) = self.following_boundary_space_count(raw_ids, span_end) else {
+            return false;
+        };
+        if right_spaces != 1 {
+            return false;
         }
         if j >= raw_ids.len() || !self.raw_position_has_word_char(raw_ids, j) {
             return false;
@@ -222,6 +221,6 @@ impl CompositionalTokenizer {
         if next_is_det {
             return false;
         }
-        saw_whitespace_between || self.token_meta_ref(raw_ids[j]).has_space_prefix
+        true
     }
 }

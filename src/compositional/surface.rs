@@ -260,21 +260,12 @@ impl CompositionalTokenizer {
     }
 
     pub(super) fn token_can_host_expr_space(&self, raw_ids: &[u32], start_idx: usize) -> bool {
-        let mut idx = start_idx;
-        let mut saw_ascii_space = false;
-        while idx < raw_ids.len() && self.token_meta_ref(raw_ids[idx]).is_whitespace_only {
-            if !self.token_meta_ref(raw_ids[idx]).is_single_ascii_space {
-                return false;
-            }
-            if saw_ascii_space {
-                return false;
-            }
-            saw_ascii_space = true;
-            idx += 1;
-        }
         let Some(next_idx) = self.next_non_whitespace_idx(raw_ids, start_idx) else {
             return false;
         };
+        if next_idx != start_idx {
+            return false;
+        }
         let next_meta = self.token_meta_ref(raw_ids[next_idx]);
         if next_meta.has_space_prefix {
             return false;
@@ -292,6 +283,47 @@ impl CompositionalTokenizer {
                 .unwrap_or(false);
         }
         false
+    }
+
+    pub(super) fn left_boundary_space_count(
+        &self,
+        raw_ids: &[u32],
+        start_idx: usize,
+    ) -> Option<usize> {
+        if start_idx >= raw_ids.len() {
+            return None;
+        }
+        let mut count = leading_ascii_spaces(&self.token_meta_ref(raw_ids[start_idx]).token_text);
+        let mut idx = start_idx;
+        while idx > 0 && self.token_meta_ref(raw_ids[idx - 1]).is_whitespace_only {
+            if !self.token_meta_ref(raw_ids[idx - 1]).is_single_ascii_space {
+                return None;
+            }
+            count += 1;
+            idx -= 1;
+        }
+        Some(count)
+    }
+
+    pub(super) fn following_boundary_space_count(
+        &self,
+        raw_ids: &[u32],
+        start_idx: usize,
+    ) -> Option<(usize, usize)> {
+        let mut count = 0usize;
+        let mut idx = start_idx;
+        while idx < raw_ids.len() && self.token_meta_ref(raw_ids[idx]).is_whitespace_only {
+            if !self.token_meta_ref(raw_ids[idx]).is_single_ascii_space {
+                return None;
+            }
+            count += 1;
+            idx += 1;
+        }
+        if idx >= raw_ids.len() {
+            return None;
+        }
+        count += leading_ascii_spaces(&self.token_meta_ref(raw_ids[idx]).token_text);
+        Some((count, idx))
     }
 
     pub(super) fn apply_contextual_space_prefix(

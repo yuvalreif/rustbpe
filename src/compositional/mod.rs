@@ -274,6 +274,10 @@ fn is_capitalized_surface(text: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn leading_ascii_spaces(text: &str) -> usize {
+    text.bytes().take_while(|byte| *byte == b' ').count()
+}
+
 fn is_base_cap_representable_surface(text: &str) -> bool {
     let alpha_chars: Vec<char> = text.chars().filter(|ch| ch.is_alphabetic()).collect();
     if alpha_chars.is_empty() {

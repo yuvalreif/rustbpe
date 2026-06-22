@@ -69,6 +69,27 @@ def _config():
     }
 
 
+def _config_with_phrase_merges():
+    config = _config()
+    config["base_bpe"]["mergeable_ranks"].extend(
+        [
+            {"token": "th", "rank": 257},
+            {"token": "the", "rank": 258},
+            {"token": "Th", "rank": 259},
+            {"token": "The", "rank": 260},
+            {"token": " p", "rank": 261},
+            {"token": " pr", "rank": 262},
+            {"token": " pro", "rank": 263},
+            {"token": " proj", "rank": 264},
+            {"token": " proje", "rank": 265},
+            {"token": " projec", "rank": 266},
+            {"token": " project", "rank": 267},
+            {"token": "project", "rank": 268},
+        ]
+    )
+    return config
+
+
 def test_compositional_tokenizer_modifier_byte_lengths_match_decode():
     tokenizer = rustbpe.CompositionalTokenizer(json.dumps(_config()))
     base_id = 256
@@ -102,3 +123,20 @@ def test_compositional_tokenizer_preserves_indentation_spaces():
     token_ids, modifier_rows = tokenizer.process_text(text)
 
     assert tokenizer.decode_with_modifiers(token_ids, modifier_rows) == text
+
+
+def test_compositional_tokenizer_preserves_multi_space_modifier_boundaries():
+    tokenizer = rustbpe.CompositionalTokenizer(json.dumps(_config_with_phrase_merges()))
+    texts = [
+        "at the project",
+        "at  the project",
+        "at   the project",
+        "the project",
+        "the  project",
+        "at  The project",
+        "rth West Brown Hare Projects website at  The project also has a Facebook page",
+    ]
+
+    for text in texts:
+        token_ids, modifier_rows = tokenizer.process_text(text)
+        assert tokenizer.decode_with_modifiers(token_ids, modifier_rows) == text

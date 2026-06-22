@@ -92,6 +92,54 @@ impl CompositionalTokenizer {
                 }
             };
 
+        let pending_detached_boundary_is_representable =
+            |this: &Self,
+             pending_groups_ref: &[PendingGroup],
+             pending_token_records_ref: &[(usize, u32)],
+             host_token_id: u32| {
+                let has_detached_group = pending_groups_ref.iter().any(|group| {
+                    this.group_names
+                        .get(group.group_idx)
+                        .map(|name| {
+                            matches!(
+                                name.as_str(),
+                                "determiners" | "article_det" | "articles" | "prepositions"
+                            )
+                        })
+                        .unwrap_or(false)
+                });
+                if !has_detached_group {
+                    return true;
+                }
+                let mut count =
+                    leading_ascii_spaces(&this.token_meta_ref(host_token_id).token_text);
+                for (_, token_id) in pending_token_records_ref.iter().rev() {
+                    let meta = this.token_meta_ref(*token_id);
+                    if !meta.is_whitespace_only {
+                        break;
+                    }
+                    if !meta.is_single_ascii_space {
+                        return false;
+                    }
+                    count += 1;
+                }
+                count == 1
+            };
+
+        let normalize_pending_space =
+            |modifier: &mut Vec<u16>, pending_groups_ref: &[PendingGroup], pending_space: bool| {
+                if pending_groups_ref.is_empty() {
+                    return;
+                }
+                if let Some(space_group_idx) = space_idx {
+                    modifier[space_group_idx] = if pending_space {
+                        1
+                    } else {
+                        self.default_modifier[space_group_idx]
+                    };
+                }
+            };
+
         let mut idx = 0usize;
         while idx < raw_ids.len() {
             let token_id = raw_ids[idx];
@@ -287,6 +335,23 @@ impl CompositionalTokenizer {
                 continue;
             }
 
+            if !pending_detached_boundary_is_representable(
+                self,
+                &pending_groups,
+                &pending_token_records,
+                token_id,
+            ) {
+                flush_pending_literal(
+                    self,
+                    &mut pending_leading_space,
+                    &mut pending_groups,
+                    &mut pending_token_records,
+                    &mut out_ids,
+                    &mut out_mods,
+                );
+                continue;
+            }
+
             let mut entry =
                 self.find_longest_boundary_safe_match(raw_ids, idx, &space_prefix_prefix_sum);
             if let Some(found) = entry.clone() {
@@ -453,6 +518,11 @@ impl CompositionalTokenizer {
                                 merged =
                                     self.strip_nonlexical_surface_groups(&merged, &found.base_ids);
                                 merged = self.combine_pending(&merged, &pending_groups);
+                                normalize_pending_space(
+                                    &mut merged,
+                                    &pending_groups,
+                                    pending_leading_space,
+                                );
                                 out_ids.extend(found.base_ids.iter().copied());
                                 out_mods.push(merged);
                             } else {
@@ -463,6 +533,11 @@ impl CompositionalTokenizer {
                                     }
                                 }
                                 combined = self.combine_pending(&combined, &pending_groups);
+                                normalize_pending_space(
+                                    &mut combined,
+                                    &pending_groups,
+                                    pending_leading_space,
+                                );
                                 out_ids.extend(found.base_ids.iter().copied());
                                 out_mods.extend(
                                     self.spread_multi_token_modifiers(
@@ -531,6 +606,11 @@ impl CompositionalTokenizer {
                         use_pending_space,
                         pending_leading_space,
                     );
+                    normalize_pending_space(
+                        &mut fallback_mods[0],
+                        &pending_groups,
+                        pending_leading_space,
+                    );
                     out_ids.extend(fallback_ids);
                     out_mods.extend(fallback_mods);
                     pending_groups.clear();
@@ -552,10 +632,11 @@ impl CompositionalTokenizer {
                 &base_modifier,
                 raw_ids,
                 idx,
-                pending_leading_space,
+                !pending_groups.is_empty() || pending_leading_space,
                 pending_leading_space,
             );
             base_modifier = self.combine_pending(&base_modifier, &pending_groups);
+            normalize_pending_space(&mut base_modifier, &pending_groups, pending_leading_space);
             out_ids.push(token_id);
             out_mods.push(base_modifier);
             pending_groups.clear();
