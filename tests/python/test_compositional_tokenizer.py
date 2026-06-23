@@ -90,6 +90,44 @@ def _config_with_phrase_merges():
     return config
 
 
+def _config_for_runtime_edge_cases():
+    config = _config()
+    group_names = config["group_names"]
+    group_value_names = config["group_value_names"]
+    group_value_names["prefix_punctuation"] = [
+        "no_prefix_punctuation",
+        'punct_prefix_"',
+    ]
+    group_value_names["suffix_punctuation"] = [
+        "no_suffix_punctuation",
+        'punct_suffix_"',
+        "punct_suffix_.",
+        "punct_suffix_,",
+    ]
+    config["modifier_group_sizes"] = [
+        len(group_value_names[name]) for name in group_names
+    ]
+    config["runtime"]["literal_maps"]["prefix_punctuation"] = {
+        '"': {"group_name": "prefix_punctuation", "rel_idx": 1},
+    }
+    config["runtime"]["literal_maps"]["suffix_punctuation"] = {
+        '"': {"group_name": "suffix_punctuation", "rel_idx": 1},
+        ".": {"group_name": "suffix_punctuation", "rel_idx": 2},
+        ",": {"group_name": "suffix_punctuation", "rel_idx": 3},
+    }
+    config["base_bpe"]["mergeable_ranks"].extend(
+        [
+            {"token": "on", "rank": 257},
+            {"token": "de", "rank": 258},
+            {"token": "dec", "rank": 259},
+            {"token": ',"', "rank": 260},
+            {"token": '".', "rank": 261},
+            {"token": "now", "rank": 262},
+        ]
+    )
+    return config
+
+
 def test_compositional_tokenizer_modifier_byte_lengths_match_decode():
     tokenizer = rustbpe.CompositionalTokenizer(json.dumps(_config()))
     base_id = 256
@@ -140,3 +178,36 @@ def test_compositional_tokenizer_preserves_multi_space_modifier_boundaries():
     for text in texts:
         token_ids, modifier_rows = tokenizer.process_text(text)
         assert tokenizer.decode_with_modifiers(token_ids, modifier_rows) == text
+
+
+def test_compositional_tokenizer_splits_suffix_punctuation_cluster():
+    tokenizer = rustbpe.CompositionalTokenizer(json.dumps(_config_for_runtime_edge_cases()))
+
+    token_ids, modifier_rows = tokenizer.process_ids([262, 261])
+
+    assert tokenizer.decode_with_modifiers(token_ids, modifier_rows) == 'now".'
+    assert token_ids == [262, 46]
+    assert modifier_rows[0][-1] == 1  # punct_suffix_"
+    assert modifier_rows[1] == [0] * len(modifier_rows[1])
+
+
+def test_compositional_tokenizer_attaches_titlecase_fallback_preposition():
+    tokenizer = rustbpe.CompositionalTokenizer(json.dumps(_config_for_runtime_edge_cases()))
+
+    token_ids, modifier_rows = tokenizer.process_ids([
+        ord("O"),
+        ord("n"),
+        ord(" "),
+        ord("D"),
+        ord("e"),
+        ord("c"),
+        ord("."),
+    ])
+
+    assert tokenizer.decode_with_modifiers(token_ids, modifier_rows) == "On Dec."
+    assert token_ids == [259]
+    row = modifier_rows[0]
+    assert row[1] == 1  # base capitalization for Dec
+    assert row[4] == 1  # prep_on
+    assert row[5] == 1  # prep capitalization for On
+    assert row[7] == 2  # punct_suffix_.

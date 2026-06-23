@@ -204,6 +204,68 @@ impl CompositionalTokenizer {
                 continue;
             }
 
+            if meta.suffix_punctuation.is_none()
+                && !meta.has_word_char
+                && !meta.is_whitespace_only
+                && !meta.has_space_prefix
+                && !out_mods.is_empty()
+            {
+                if let Some(suffix_map) = self.runtime.literal_maps.get("suffix_punctuation") {
+                    let surface = if meta.canonical_surface.is_empty() {
+                        meta.token_text.as_str()
+                    } else {
+                        meta.canonical_surface.as_str()
+                    };
+                    let mut best_prefix: Option<(&String, &LiteralTransform)> = None;
+                    for (literal, transform) in suffix_map {
+                        if literal.is_empty() || !surface.starts_with(literal) {
+                            continue;
+                        }
+                        if best_prefix
+                            .as_ref()
+                            .map(|(best_literal, _)| literal.len() > best_literal.len())
+                            .unwrap_or(true)
+                        {
+                            best_prefix = Some((literal, transform));
+                        }
+                    }
+                    if let Some((literal, suffix_transform)) = best_prefix {
+                        let remainder = &surface[literal.len()..];
+                        if !remainder.is_empty() {
+                            let prev_is_whitespace = idx == 0
+                                || self.token_meta_ref(raw_ids[idx - 1]).is_whitespace_only;
+                            let already_has_suffix = suffix_group_name
+                                .as_ref()
+                                .map(|name| {
+                                    self.modifier_has_active_group(out_mods.last().unwrap(), name)
+                                })
+                                .unwrap_or(false);
+                            if !prev_is_whitespace
+                                && !already_has_suffix
+                                && self.runtime.attachment_limits.max_suffix_punctuation > 0
+                            {
+                                if let Some(group_idx) =
+                                    self.group_idx(&suffix_transform.group_name)
+                                {
+                                    let remainder_ids =
+                                        self.encode_segment(remainder).unwrap_or_default();
+                                    if !remainder_ids.is_empty() {
+                                        out_mods.last_mut().unwrap()[group_idx] =
+                                            suffix_transform.rel_idx as u16;
+                                        for remainder_id in remainder_ids {
+                                            out_ids.push(remainder_id);
+                                            out_mods.push(self.empty_modifier());
+                                        }
+                                        idx += 1;
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             if let Some(suffix_transform) = meta.suffix_punctuation.clone() {
                 if self.group_idx("suffix_punctuation").is_some() && !out_mods.is_empty() {
                     let prev_is_whitespace =
@@ -333,6 +395,63 @@ impl CompositionalTokenizer {
                     &mut out_mods,
                 );
                 continue;
+            }
+
+            if meta.has_word_char {
+                if let Some((consumed_len, lower_surface)) = self.titlecase_lower_span(raw_ids, idx)
+                {
+                    if self.can_attach_detached_modifier(
+                        raw_ids,
+                        idx,
+                        consumed_len,
+                        !pending_groups.is_empty(),
+                    ) {
+                        if let Some(transform) = self
+                            .runtime
+                            .literal_maps
+                            .get("determiners")
+                            .and_then(|m| m.get(&lower_surface))
+                            .or_else(|| {
+                                self.runtime
+                                    .literal_maps
+                                    .get("prepositions")
+                                    .and_then(|m| m.get(&lower_surface))
+                            })
+                        {
+                            mark_pending_detached_prefix(self, idx, &mut pending_leading_space);
+                            if let Some(group_idx) = self.group_idx(&transform.group_name) {
+                                pending_groups.push(PendingGroup {
+                                    group_idx,
+                                    rel_idx: transform.rel_idx as u16,
+                                });
+                                if transform.group_name == "determiners"
+                                    || transform.group_name == "article_det"
+                                    || transform.group_name == "articles"
+                                {
+                                    if let Some(cap_idx) = article_cap_idx {
+                                        pending_groups.push(PendingGroup {
+                                            group_idx: cap_idx,
+                                            rel_idx: 1,
+                                        });
+                                    }
+                                } else if transform.group_name == "prepositions" {
+                                    if let Some(cap_idx) = prep_cap_idx {
+                                        pending_groups.push(PendingGroup {
+                                            group_idx: cap_idx,
+                                            rel_idx: 1,
+                                        });
+                                    }
+                                }
+                                for offset in 0..consumed_len {
+                                    pending_token_records
+                                        .push((idx + offset, raw_ids[idx + offset]));
+                                }
+                                idx += consumed_len;
+                                continue;
+                            }
+                        }
+                    }
+                }
             }
 
             if !pending_detached_boundary_is_representable(

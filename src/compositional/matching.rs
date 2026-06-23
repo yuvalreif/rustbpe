@@ -159,6 +159,48 @@ impl CompositionalTokenizer {
         Some((end_idx - start_idx, output_ids, output_mods))
     }
 
+    pub(super) fn titlecase_lower_span(
+        &self,
+        raw_ids: &[u32],
+        start_idx: usize,
+    ) -> Option<(usize, String)> {
+        if start_idx >= raw_ids.len() || !self.token_meta_ref(raw_ids[start_idx]).has_word_char {
+            return None;
+        }
+        let mut end_idx = start_idx + 1;
+        while end_idx < raw_ids.len() {
+            let meta = self.token_meta_ref(raw_ids[end_idx]);
+            if meta.has_space_prefix || !meta.has_word_char || meta.is_whitespace_only {
+                break;
+            }
+            end_idx += 1;
+        }
+        let surface = self
+            .decode_ids(&raw_ids[start_idx..end_idx])
+            .trim()
+            .to_string();
+        if surface.is_empty()
+            || !surface.chars().all(|ch| ch.is_alphabetic())
+            || !surface.chars().any(|ch| ch.is_uppercase())
+            || !is_base_cap_representable_surface(&surface)
+        {
+            return None;
+        }
+        let is_title_surface = surface
+            .chars()
+            .next()
+            .map(|ch| ch.is_uppercase())
+            .unwrap_or(false)
+            && surface
+                .chars()
+                .skip(1)
+                .all(|ch| !ch.is_alphabetic() || ch.is_lowercase());
+        if !is_title_surface {
+            return None;
+        }
+        Some((end_idx - start_idx, surface.to_lowercase()))
+    }
+
     pub(super) fn can_attach_detached_modifier(
         &self,
         raw_ids: &[u32],
