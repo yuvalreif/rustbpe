@@ -234,13 +234,13 @@ impl CompositionalTokenizer {
         if j >= raw_ids.len() || !self.raw_position_has_word_char(raw_ids, j) {
             return false;
         }
-        let next_surface = &self.token_meta_ref(raw_ids[j]).canonical_surface;
-        let current_surface = &self.token_meta_ref(raw_ids[start_idx]).canonical_surface;
+        let next_surface = self.word_surface(raw_ids, j, None);
+        let current_surface = self.word_surface(raw_ids, start_idx, Some(span_end));
         let has_prep = self
             .runtime
             .literal_maps
             .get("prepositions")
-            .map(|m| m.contains_key(next_surface))
+            .map(|m| m.contains_key(&next_surface))
             .unwrap_or(false);
         if has_prep {
             return false;
@@ -249,13 +249,13 @@ impl CompositionalTokenizer {
             .runtime
             .literal_maps
             .get("prepositions")
-            .map(|m| m.contains_key(current_surface))
+            .map(|m| m.contains_key(&current_surface))
             .unwrap_or(false);
         let next_is_det = self
             .runtime
             .literal_maps
             .get("determiners")
-            .map(|m| m.contains_key(next_surface))
+            .map(|m| m.contains_key(&next_surface))
             .unwrap_or(false);
         if current_is_prep && next_is_det {
             return true;
@@ -264,5 +264,22 @@ impl CompositionalTokenizer {
             return false;
         }
         true
+    }
+
+    fn word_surface(&self, raw_ids: &[u32], start_idx: usize, end_idx: Option<usize>) -> String {
+        let mut end_idx = end_idx.unwrap_or(start_idx + 1);
+        if end_idx > raw_ids.len() {
+            end_idx = raw_ids.len();
+        }
+        while end_idx < raw_ids.len() {
+            let meta = self.token_meta_ref(raw_ids[end_idx]);
+            if meta.has_space_prefix || !meta.has_word_char || meta.is_whitespace_only {
+                break;
+            }
+            end_idx += 1;
+        }
+        self.decode_ids(&raw_ids[start_idx..end_idx])
+            .trim()
+            .to_lowercase()
     }
 }

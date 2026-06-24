@@ -94,6 +94,12 @@ def _config_for_runtime_edge_cases():
     config = _config()
     group_names = config["group_names"]
     group_value_names = config["group_value_names"]
+    group_value_names["prepositions"] = [
+        "no_preposition",
+        "prep_on",
+        "prep_to",
+        "prep_for",
+    ]
     group_value_names["prefix_punctuation"] = [
         "no_prefix_punctuation",
         'punct_prefix_"',
@@ -115,6 +121,11 @@ def _config_for_runtime_edge_cases():
         ".": {"group_name": "suffix_punctuation", "rel_idx": 2},
         ",": {"group_name": "suffix_punctuation", "rel_idx": 3},
     }
+    config["runtime"]["literal_maps"]["prepositions"] = {
+        "on": {"group_name": "prepositions", "rel_idx": 1},
+        "to": {"group_name": "prepositions", "rel_idx": 2},
+        "for": {"group_name": "prepositions", "rel_idx": 3},
+    }
     config["base_bpe"]["mergeable_ranks"].extend(
         [
             {"token": "on", "rank": 257},
@@ -123,6 +134,10 @@ def _config_for_runtime_edge_cases():
             {"token": ',"', "rank": 260},
             {"token": '".', "rank": 261},
             {"token": "now", "rank": 262},
+            {"token": "to", "rank": 263},
+            {"token": "for", "rank": 264},
+            {"token": "turn", "rank": 265},
+            {"token": "general", "rank": 266},
         ]
     )
     return config
@@ -211,3 +226,26 @@ def test_compositional_tokenizer_attaches_titlecase_fallback_preposition():
     assert row[4] == 1  # prep_on
     assert row[5] == 1  # prep capitalization for On
     assert row[7] == 2  # punct_suffix_.
+
+
+def test_compositional_tokenizer_keeps_stranded_preposition_before_preposition():
+    tokenizer = rustbpe.CompositionalTokenizer(json.dumps(_config_for_runtime_edge_cases()))
+
+    token_ids, modifier_rows = tokenizer.process_ids([
+        265,  # turn
+        ord(" "),
+        ord("T"),
+        ord("o"),
+        ord(" "),
+        ord("F"),
+        ord("o"),
+        ord("r"),
+        ord(" "),
+        266,  # general
+    ])
+
+    assert tokenizer.decode_with_modifiers(token_ids, modifier_rows) == "turn To For general"
+    assert token_ids == [265, 263, 266]
+    assert modifier_rows[1][4] == 0  # To is literal, not a detached preposition
+    assert modifier_rows[2][4] == 3  # prep_for
+    assert modifier_rows[2][5] == 1  # prep capitalization for For
